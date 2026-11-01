@@ -274,7 +274,6 @@
   </div>
 
   <script>
-    // Safe API Key retrieval from local device memory (never exposed to GitHub)
     function getApiKey() {
       return localStorage.getItem('gemini_user_api_key') || '';
     }
@@ -287,10 +286,10 @@
 
     function updateApiKeyPrompt() {
       const current = getApiKey();
-      const entered = prompt("Enter your Gemini API Key from Google AI Studio:\n(This is saved strictly on this device and never uploaded to GitHub)", current);
+      const entered = prompt("Enter your Gemini API Key from Google AI Studio:\n(Saved on this device only)", current);
       if (entered !== null) {
         setApiKey(entered);
-        alert("API Key saved to this device!");
+        alert("API Key saved!");
       }
     }
 
@@ -326,7 +325,6 @@
       localStorage.setItem('user_learned_catalog', JSON.stringify(catalog));
     }
 
-    // UI Init
     const dateInput = document.getElementById('logDate');
     dateInput.value = new Date().toISOString().split('T')[0];
 
@@ -438,7 +436,7 @@
 
       let key = getApiKey();
       if (!key) {
-        key = prompt("Please paste your Gemini API Key from Google AI Studio:\n(It will be safely remembered on this device only)");
+        key = prompt("Please paste your Gemini API Key from Google AI Studio:\n(It will be safely remembered on this device)");
         if (!key) return;
         setApiKey(key);
       }
@@ -456,7 +454,7 @@
         document.getElementById('disambiguationLabel').style.display = 'block';
         resultBox.style.display = 'block';
       } catch (err) {
-        alert("AI error: " + err.message + "\n\nIf your key expired, tap '🔑 Set / Change API Key' to paste a new one.");
+        alert("AI error: " + err.message);
       } finally {
         spinner.style.display = 'none';
       }
@@ -497,12 +495,12 @@
       document.getElementById('aiFat').value = selected.fat;
     }
 
+    // High-speed API caller with minimal thinking latency and ample token budget
     async function callGeminiAPI(foodDescription, key) {
-      const prompt = `You are a clinical nutritionist in Singapore. Analyze: "${foodDescription}".
-For brand items (Paris Baguette, Subway SG, Ya Kun), strictly use Singapore menu data.
-Provide 3 realistic specific variations.
-Return ONLY JSON matching:
-{"variations": [{"name": "Specific brand/dish name", "portion": "approx size", "calories": 0, "protein": 0, "carbs": 0, "fat": 0}]}`;
+      const prompt = `You are a clinical sports nutritionist in Singapore. Analyze: "${foodDescription}".
+For chain items (Paris Baguette, Subway SG, Ya Kun), strictly use Singapore menu data.
+Provide 2 to 3 concise variations. Return ONLY JSON matching this format:
+{"variations": [{"name": "Specific dish name", "portion": "approx size", "calories": 0, "protein": 0, "carbs": 0, "fat": 0}]}`;
 
       const candidateModels = ['gemini-3.8-flash', 'gemini-3.6-flash'];
       let lastError = null;
@@ -515,7 +513,12 @@ Return ONLY JSON matching:
             headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseMimeType: "application/json", maxOutputTokens: 350, temperature: 0.1 }
+              generationConfig: { 
+                responseMimeType: "application/json", 
+                maxOutputTokens: 1200, 
+                temperature: 0.1,
+                thinkingConfig: { thinkingLevel: "LOW" } // Disables deep reasoning latency for rapid response
+              }
             })
           });
 
@@ -525,11 +528,22 @@ Return ONLY JSON matching:
           }
 
           const data = await response.json();
-          let rawText = data.candidates[0].content.parts[0].text.trim().replace(/^```json/i, '').replace(/```$/, '').trim();
+          let rawText = data.candidates[0].content.parts[0].text.trim();
+          
+          // Clean markdown wrappers
+          rawText = rawText.replace(/^```json/i, '').replace(/```$/, '').trim();
+          
+          // Slice directly from first { to last }
+          const start = rawText.indexOf('{');
+          const end = rawText.lastIndexOf('}');
+          if (start !== -1 && end !== -1) {
+            rawText = rawText.substring(start, end + 1);
+          }
+
           return JSON.parse(rawText);
         } catch (err) {
           lastError = err;
-          if (err.message && (err.message.includes('not found') || err.message.includes('no longer available'))) {
+          if (err.message && (err.message.includes('not found') || err.message.includes('no longer available') || err.message.includes('thinkingConfig'))) {
             continue;
           }
           throw err;
@@ -604,7 +618,6 @@ Return ONLY JSON matching:
       document.getElementById('totalFat').innerText = totalF + 'g';
     }
 
-    // Backup & Restore
     function exportData() {
       const data = JSON.stringify(localStorage);
       navigator.clipboard.writeText(data).then(() => {
@@ -627,7 +640,6 @@ Return ONLY JSON matching:
       }
     }
 
-    // PWA Install Prompt
     let deferredPrompt;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -653,7 +665,6 @@ Return ONLY JSON matching:
       document.getElementById('installBanner').style.display = 'flex';
     }
 
-    // Inject Web App Manifest dynamically
     const manifestBlob = new Blob([JSON.stringify({
       name: "Meal Tracker - Jum & Wx",
       short_name: "MealTracker",
